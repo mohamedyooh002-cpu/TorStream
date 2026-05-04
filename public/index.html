@@ -1,0 +1,487 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TorStream</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0c0c0c;
+      --surface: #141414;
+      --border:  #222;
+      --accent:  #e50914;
+      --accent2: #f40612;
+      --muted:   #6b7280;
+      --text:    #f3f4f6;
+      --text2:   #9ca3af;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* Navbar */
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(12,12,12,0.93);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+    }
+    .nav-logo {
+      font-size: 20px; font-weight: 700; letter-spacing: -0.5px;
+      color: var(--text); cursor: pointer; user-select: none;
+    }
+    .nav-logo span { color: var(--accent); }
+    .nav-tabs {
+      display: flex; gap: 2px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 3px;
+    }
+    .nav-tab {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 14px; border-radius: 6px;
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      cursor: pointer; border: none; background: transparent;
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+    .nav-tab.active { background: var(--accent); color: #fff; }
+    .nav-tab svg { width: 15px; height: 15px; }
+
+    /* Views */
+    .view { display: none; flex: 1; }
+    .view.active { display: block; }
+
+    /* Search View */
+    #view-search { padding: 36px 24px 60px; max-width: 1100px; margin: 0 auto; width: 100%; }
+
+    .search-bar-wrap { display: flex; gap: 10px; margin-bottom: 28px; }
+    .search-input-wrap { position: relative; flex: 1; }
+    .search-input-wrap .si {
+      position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); pointer-events: none; display: flex;
+    }
+    #search-input {
+      width: 100%; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px 44px 14px 48px;
+      font-size: 15px; font-family: 'Inter', sans-serif;
+      color: var(--text); outline: none; transition: border-color 0.2s;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-input::placeholder { color: var(--muted); }
+    #search-clear {
+      position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; padding: 4px; display: none; align-items: center;
+    }
+    #search-clear:hover { color: var(--text); }
+    #search-clear.visible { display: flex; }
+    #search-submit {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      padding: 0 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    #search-submit:hover { background: var(--accent2); }
+
+    .state-block {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 60px 0; gap: 12px; color: var(--muted);
+    }
+    .state-block svg { color: #2a2a2a; }
+    .state-block p { font-size: 14px; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #search-results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 16px;
+    }
+
+    /* Movie Card */
+    .movie-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+      display: flex; flex-direction: column;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .movie-card:hover { border-color: #333; transform: translateY(-2px); }
+
+    .card-poster {
+      position: relative; aspect-ratio: 2/3;
+      background: #1a1a1a; overflow: hidden;
+    }
+    .card-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card-poster-placeholder {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%; color: #333;
+    }
+    .card-poster-placeholder svg { width: 36px; height: 36px; }
+
+    .badge {
+      position: absolute; top: 8px;
+      font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px; letter-spacing: 0.4px;
+    }
+    .badge-quality { left: 8px; background: rgba(229,9,20,0.85); color: #fff; }
+    .badge-ready   { right: 8px; background: rgba(46,204,113,0.85); color: #fff; }
+
+    .card-body {
+      padding: 10px 11px 4px;
+      display: flex; flex-direction: column; gap: 4px; flex: 1;
+    }
+    .card-title {
+      font-size: 13px; font-weight: 600; line-height: 1.3;
+      overflow: hidden; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+    .card-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .card-year  { font-size: 11px; color: var(--muted); }
+    .card-imdb  { font-size: 11px; color: #f5c518; font-weight: 600; }
+    .card-seeds { font-size: 11px; color: #4ade80; }
+    .card-size  { font-size: 11px; color: var(--muted); }
+
+    .card-action { padding: 8px 11px 11px; }
+    .btn-stream {
+      width: 100%; display: flex; align-items: center;
+      justify-content: center; gap: 6px; padding: 7px 0;
+      border-radius: 7px; font-size: 12px; font-weight: 600;
+      border: none; cursor: pointer; transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-stream svg { width: 13px; height: 13px; flex-shrink: 0; }
+    .btn-stream.stream { background: var(--accent); color: #fff; }
+    .btn-stream.stream:hover { background: var(--accent2); }
+    .btn-stream.watch { background: rgba(46,204,113,0.15); color: #4ade80; border: 1px solid rgba(46,204,113,0.3); }
+    .btn-stream.watch:hover { background: rgba(46,204,113,0.25); }
+    .btn-stream:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-stream.err { background: rgba(229,9,20,0.15); color: #f87171; border: 1px solid rgba(229,9,20,0.3); }
+
+    /* Library View */
+    #view-library { padding: 32px 24px 60px; max-width: 1100px; margin: 0 auto; width: 100%; }
+    .library-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .library-header h2 { font-size: 18px; font-weight: 700; }
+    .library-count {
+      font-size: 12px; color: var(--muted);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 3px 10px; border-radius: 20px;
+    }
+    #library-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 16px;
+    }
+    .library-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 2px;
+    }
+    .library-progress {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      overflow: hidden;
+      margin-top: 6px;
+      margin-bottom: 2px;
+    }
+    .library-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #e50914, #f97316);
+      transition: width 0.25s ease;
+    }
+
+    /* Player View */
+    #view-player { display: none; position: fixed; inset: 0; z-index: 100; background: #000; }
+    #view-player.active { display: block; }
+    #player-wrapper { position: relative; width: 100%; height: 100%; }
+    #video-player { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+    #player-overlay {
+      position: absolute; inset: 0; z-index: 10;
+      background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.5) 100%);
+      transition: opacity 0.3s;
+    }
+    #player-overlay.hide-controls { opacity: 0; pointer-events: none; }
+
+    #player-top-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 20px; display: flex; align-items: center; gap: 12px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 100%);
+    }
+    #player-back-btn {
+      background: none; border: none; color: #fff; cursor: pointer;
+      padding: 6px; border-radius: 50%; display: flex; align-items: center;
+      transition: background 0.15s;
+    }
+    #player-back-btn:hover { background: rgba(255,255,255,0.1); }
+    #player-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    #player-center-play {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 15; width: 70px; height: 70px;
+      background: rgba(229,9,20,0.85); border: none; border-radius: 50%;
+      color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.3s, background 0.15s;
+    }
+    #player-center-play:hover { background: rgba(244,6,18,0.95); }
+
+    #player-bottom-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 8px 20px 18px;
+      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%);
+    }
+
+    #progress-container {
+      position: relative; height: 4px;
+      background: rgba(255,255,255,0.2); border-radius: 2px;
+      cursor: pointer; margin-bottom: 10px; transition: height 0.15s;
+    }
+    #progress-container:hover { height: 7px; }
+    #progress-buffered { position: absolute; top:0; left:0; height:100%; background: rgba(255,255,255,0.2); border-radius: 2px; }
+    #progress-played  { position: absolute; top:0; left:0; height:100%; background: var(--accent); border-radius: 2px; z-index:1; }
+    #progress-thumb {
+      position: absolute; top: 50%;
+      width: 13px; height: 13px;
+      background: var(--accent); border-radius: 50%;
+      transform: translate(-50%, -50%); z-index: 2;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    #progress-container:hover #progress-thumb { opacity: 1; }
+
+    .pcrow { display: flex; align-items: center; justify-content: space-between; }
+    .pcleft, .pcright { display: flex; align-items: center; gap: 10px; }
+
+    .ctrl-btn {
+      background: none; border: none; color: #fff;
+      cursor: pointer; padding: 4px; display: flex; align-items: center;
+      transition: opacity 0.15s;
+    }
+    .ctrl-btn:hover { opacity: 0.75; }
+    .ctrl-btn svg { width: 20px; height: 20px; }
+
+    .ptime { font-size: 12px; color: rgba(255,255,255,0.7); font-variant-numeric: tabular-nums; }
+
+    #volume-slider {
+      -webkit-appearance: none; appearance: none;
+      width: 70px; height: 3px; background: rgba(255,255,255,0.25);
+      border-radius: 2px; outline: none; cursor: pointer;
+    }
+    #volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #fff; cursor: pointer;
+    }
+
+    #video-end-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.88);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; z-index: 20;
+    }
+    #video-end-overlay.hidden { display: none; }
+    #video-end-overlay h2 { font-size: 28px; font-weight: 700; }
+    #video-end-overlay p { color: var(--muted); font-size: 14px; }
+    .btn-exit-player {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 24px; background: var(--accent); color: #fff;
+      border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-exit-player:hover { background: var(--accent2); }
+
+    #player-loading {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 25; background: rgba(0,0,0,0.6);
+    }
+    #player-loading.hidden { display: none; }
+
+    /* Player view needs full viewport height */
+    #view-player { height: 100vh; }
+
+    /* Spin animation for loading icon */
+    .spin-icon { animation: spin 0.75s linear infinite; }
+
+    @media (max-width: 600px) {
+      #search-results, #library-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Navbar -->
+  <nav>
+    <div class="nav-logo">Tor<span>Stream</span></div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="nav-search" onclick="switchView('search')">
+        <i data-lucide="search"></i> Search
+      </button>
+      <button class="nav-tab" id="nav-library" onclick="switchView('library')">
+        <i data-lucide="hard-drive"></i> Libraries
+        <span id="library-badge" style="display:none;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:2px;"></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Search View -->
+  <div class="view active" id="view-search">
+    <div class="search-bar-wrap">
+      <div class="search-input-wrap">
+        <span class="si"><i data-lucide="search" style="width:18px;height:18px;"></i></span>
+        <input id="search-input" type="text" placeholder="Search movies, TV shows…" autocomplete="off" spellcheck="false" />
+        <button id="search-clear" title="Clear" onclick="clearSearch()"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
+      </div>
+      <button id="search-submit" onclick="submitSearch()">
+        <i data-lucide="arrow-right"></i> Search
+      </button>
+    </div>
+
+    <div id="search-state-empty" class="state-block">
+      <i data-lucide="film" style="width:52px;height:52px;"></i>
+      <p>Search for something to stream</p>
+    </div>
+    <div id="search-state-loading" class="state-block" style="display:none;">
+      <div class="spinner"></div>
+      <p>Searching…</p>
+    </div>
+    <div id="search-state-none" class="state-block" style="display:none;">
+      <i data-lucide="search-x" style="width:52px;height:52px;"></i>
+      <p>No results found</p>
+    </div>
+
+    <div id="search-results"></div>
+  </div>
+
+  <!-- Library View -->
+  <div class="view" id="view-library">
+    <div class="library-header">
+      <h2>Libraries</h2>
+      <span class="library-count" id="library-count-label">0 items</span>
+    </div>
+    <div id="library-state-loading" class="state-block">
+      <div class="spinner"></div>
+      <p>Loading library…</p>
+    </div>
+    <div id="library-state-empty" class="state-block" style="display:none;">
+      <i data-lucide="inbox" style="width:52px;height:52px;"></i>
+      <p>No files yet — start a stream to add items</p>
+    </div>
+    <div id="library-grid"></div>
+  </div>
+
+  <!-- Player View -->
+  <div class="view" id="view-player">
+    <div id="player-wrapper">
+      <video id="video-player" playsinline></video>
+
+      <div id="player-overlay">
+        <div id="player-top-bar">
+          <button id="player-back-btn" onclick="exitPlayer()">
+            <i data-lucide="arrow-left" style="width:22px;height:22px;"></i>
+          </button>
+          <span id="player-title"></span>
+        </div>
+
+        <button id="player-center-play" onclick="togglePlay()">
+          <i data-lucide="play" id="icon-play" style="width:30px;height:30px;margin-left:3px;"></i>
+        </button>
+
+        <div id="player-bottom-bar">
+          <div id="progress-container">
+            <div id="progress-buffered"></div>
+            <div id="progress-played"></div>
+            <div id="progress-thumb"></div>
+          </div>
+          <div class="pcrow">
+            <div class="pcleft">
+              <button class="ctrl-btn" onclick="togglePlay()">
+                <i data-lucide="play" id="icon-pp" style="width:22px;height:22px;"></i>
+              </button>
+              <button class="ctrl-btn" onclick="toggleMute()">
+                <i data-lucide="volume-2" id="icon-volume" style="width:18px;height:18px;"></i>
+              </button>
+              <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" />
+              <span class="ptime">
+                <span id="player-current-time">0:00</span> / <span id="player-duration">0:00</span>
+              </span>
+            </div>
+            <div class="pcright">
+              <button class="ctrl-btn" onclick="toggleFullscreen()">
+                <i data-lucide="maximize" id="icon-fs" style="width:18px;height:18px;"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="video-end-overlay" class="hidden">
+        <h2>Finished</h2>
+        <p id="video-end-title"></p>
+        <button class="btn-exit-player" onclick="exitPlayer()">
+          <i data-lucide="arrow-left" style="width:16px;height:16px;"></i> Back
+        </button>
+      </div>
+
+      <div id="player-loading">
+        <div class="spinner" style="width:48px;height:48px;border-width:4px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TorrentStream Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <link rel="stylesheet" href="/admin.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0a0a0a',
+            card: '#181818',
+            accent: '#e50914',
+            'accent-hover': '#b2070f',
+            'card-hover': '#222222',
+            'border-subtle': '#2a2a2a',
+            'text-primary': '#ffffff',
+            'text-secondary': '#a0a0a0',
+            'text-muted': '#666666',
+            'status-ready': '#22c55e',
+            'status-downloading': '#eab308',
+            'status-error': '#ef4444',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0a0a0a;
+      color: #ffffff;
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0a0a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #333333;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555555;
+    }
+    .tab-btn.active {
+      color: #e50914;
+      border-bottom-color: #e50914;
+    }
+    .progress-bar-fill {
+      transition: width 0.4s ease;
+    }
+    .disk-bar-fill {
+      transition: width 0.6s ease;
+    }
+    .fade-in {
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-bg text-text-primary antialiased">
+
+  <!-- ========== LOGIN SECTION ========== -->
+  <section id="admin-login" class="flex items-center justify-center min-h-screen px-4">
+    <div class="w-full max-w-md bg-card rounded-xl border border-border-subtle shadow-2xl p-8 fade-in">
+      <div class="text-center mb-8">
+        <div class="flex items-center justify-center gap-3 mb-2">
+          <i data-lucide="radio" class="w-8 h-8 text-accent"></i>
+          <h1 class="text-2xl font-bold tracking-tight">TorrentStream Admin</h1>
+        </div>
+        <p class="text-text-secondary text-sm mt-1">Sign in to manage your streaming platform</p>
+      </div>
+
+      <div id="login-error" class="hidden mb-4 bg-status-error/10 border border-status-error/30 text-status-error rounded-lg px-4 py-3 text-sm flex items-center gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 flex-shrink-0"></i>
+        <span id="login-error-text">Invalid credentials</span>
+      </div>
+
+      <form id="login-form" class="space-y-5" autocomplete="off">
+        <div>
+          <label for="login-username" class="block text-sm font-medium text-text-secondary mb-1.5">Username</label>
+          <div class="relative">
+            <i data-lucide="user" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"></i>
+            <input
+              type="text"
+              id="login-username"
+              name="username"
+              placeholder="Enter username"
+              required
+              class="w-full bg-bg border border-border-subtle rounded-lg pl-10 pr-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label for="login-password" class="block text-sm font-medium text-text-secondary mb-1.5">Password</label>
+          <div class="relative">
+            <i data-lucide="lock" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"></i>
+            <input
+              type="password"
+              id="login-password"
+              name="password"
+              placeholder="Enter password"
+              required
+              class="w-full bg-bg border border-border-subtle rounded-lg pl-10 pr-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          id="login-btn"
+          class="w-full bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg py-2.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-bg flex items-center justify-center gap-2"
+        >
+          <i data-lucide="log-in" class="w-4 h-4"></i>
+          Sign In
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========== DASHBOARD ========== -->
+  <section id="admin-dashboard" class="hidden min-h-screen flex flex-col">
+
+    <!-- Top Bar -->
+    <header class="sticky top-0 z-30 bg-card/95 backdrop-blur border-b border-border-subtle">
+      <div class="max-w-[1440px] mx-auto flex items-center justify-between px-6 py-3">
+        <div class="flex items-center gap-3">
+          <i data-lucide="radio" class="w-6 h-6 text-accent"></i>
+          <h1 class="text-lg font-bold tracking-tight">TorrentStream Admin</h1>
+        </div>
+        <div class="flex items-center gap-4">
+          <span id="admin-user-badge" class="text-xs text-text-secondary bg-bg px-3 py-1 rounded-full border border-border-subtle flex items-center gap-1.5">
+            <i data-lucide="shield" class="w-3 h-3"></i>
+            <span id="admin-username-display">admin</span>
+          </span>
+          <button
+            id="logout-btn"
+            class="flex items-center gap-1.5 text-sm text-text-secondary hover:text-accent transition-colors px-3 py-1.5 rounded-lg hover:bg-bg"
+          >
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            Logout
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Stats Cards -->
+    <div class="max-w-[1440px] mx-auto w-full px-6 pt-6 pb-2">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <!-- Total Movies -->
+        <div class="bg-card rounded-xl border border-border-subtle p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="film" class="w-5 h-5 text-accent"></i>
+          </div>
+          <div>
+            <p class="text-xs text-text-muted uppercase tracking-wide font-medium">Total Movies</p>
+            <p id="stat-total-movies" class="text-xl font-bold">0</p>
+          </div>
+        </div>
+        <!-- Cache Size -->
+        <div class="bg-card rounded-xl border border-border-subtle p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="database" class="w-5 h-5 text-accent"></i>
+          </div>
+          <div>
+            <p class="text-xs text-text-muted uppercase tracking-wide font-medium">Cache Size</p>
+            <p id="stat-cache-size" class="text-xl font-bold">0 <span class="text-sm font-normal text-text-secondary">GB</span></p>
+          </div>
+        </div>
+        <!-- Disk Free -->
+        <div class="bg-card rounded-xl border border-border-subtle p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="hard-drive" class="w-5 h-5 text-accent"></i>
+          </div>
+          <div>
+            <p class="text-xs text-text-muted uppercase tracking-wide font-medium">Disk Free</p>
+            <p id="stat-disk-free" class="text-xl font-bold">0 <span class="text-sm font-normal text-text-secondary">GB</span></p>
+          </div>
+        </div>
+        <!-- Active Downloads -->
+        <div class="bg-card rounded-xl border border-border-subtle p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-status-downloading/10 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="download" class="w-5 h-5 text-status-downloading"></i>
+          </div>
+          <div>
+            <p class="text-xs text-text-muted uppercase tracking-wide font-medium">Active DLs</p>
+            <p id="stat-active-downloads" class="text-xl font-bold">0</p>
+          </div>
+        </div>
+        <!-- Failed Jobs -->
+        <div class="bg-card rounded-xl border border-border-subtle p-4 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-status-error/10 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-status-error"></i>
+          </div>
+          <div>
+            <p class="text-xs text-text-muted uppercase tracking-wide font-medium">Failed Jobs</p>
+            <p id="stat-failed-jobs" class="text-xl font-bold">0</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="max-w-[1440px] mx-auto w-full px-6 pt-4">
+      <nav class="flex border-b border-border-subtle gap-1">
+        <button class="tab-btn active px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-text-secondary hover:text-text-primary transition-colors" data-tab="movies">
+          <span class="flex items-center gap-1.5"><i data-lucide="film" class="w-4 h-4"></i> Movies</span>
+        </button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-text-secondary hover:text-text-primary transition-colors" data-tab="downloads">
+          <span class="flex items-center gap-1.5"><i data-lucide="download" class="w-4 h-4"></i> Downloads</span>
+        </button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-text-secondary hover:text-text-primary transition-colors" data-tab="search">
+          <span class="flex items-center gap-1.5"><i data-lucide="search" class="w-4 h-4"></i> Search &amp; Cache</span>
+        </button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-text-secondary hover:text-text-primary transition-colors" data-tab="disk">
+          <span class="flex items-center gap-1.5"><i data-lucide="hard-drive" class="w-4 h-4"></i> Disk Management</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="max-w-[1440px] mx-auto w-full px-6 py-6 flex-1">
+
+      <!-- ===== MOVIES TAB ===== -->
+      <div id="tab-movies" class="tab-content fade-in">
+        <!-- Toolbar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-3">
+            <div class="relative">
+              <i data-lucide="filter" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"></i>
+              <select id="movies-status-filter" class="bg-bg border border-border-subtle rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary focus:outline-none focus:border-accent appearance-none cursor-pointer">
+                <option value="all">All Statuses</option>
+                <option value="ready">Ready</option>
+                <option value="downloading">Downloading</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+            <div class="relative">
+              <i data-lucide="arrow-up-down" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"></i>
+              <select id="movies-sort" class="bg-bg border border-border-subtle rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary focus:outline-none focus:border-accent appearance-none cursor-pointer">
+                <option value="added-desc">Newest First</option>
+                <option value="added-asc">Oldest First</option>
+                <option value="title-asc">Title A–Z</option>
+                <option value="title-desc">Title Z–A</option>
+                <option value="size-desc">Largest Size</option>
+                <option value="size-asc">Smallest Size</option>
+                <option value="year-desc">Year New</option>
+                <option value="year-asc">Year Old</option>
+              </select>
+            </div>
+          </div>
+          <button id="delete-all-movies-btn" class="flex items-center gap-1.5 bg-status-error/10 hover:bg-status-error/20 text-status-error border border-status-error/30 rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Delete All
+          </button>
+        </div>
+
+        <!-- Movies Table -->
+        <div class="bg-card rounded-xl border border-border-subtle overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
+                  <th class="text-left px-4 py-3 font-medium">Poster</th>
+                  <th class="text-left px-4 py-3 font-medium">Title</th>
+                  <th class="text-left px-4 py-3 font-medium">Year</th>
+                  <th class="text-left px-4 py-3 font-medium">Quality</th>
+                  <th class="text-left px-4 py-3 font-medium">Size</th>
+                  <th class="text-left px-4 py-3 font-medium">IMDb</th>
+                  <th class="text-left px-4 py-3 font-medium">Status</th>
+                  <th class="text-left px-4 py-3 font-medium">Added</th>
+                  <th class="text-right px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="movies-table-body">
+                <!-- Rows injected by JS -->
+              </tbody>
+            </table>
+          </div>
+          <!-- Empty State -->
+          <div id="movies-empty-state" class="hidden text-center py-16 px-4">
+            <i data-lucide="film" class="w-12 h-12 text-text-muted mx-auto mb-3"></i>
+            <p class="text-text-secondary font-medium">No movies found</p>
+            <p class="text-text-muted text-sm mt-1">Add movies by searching and downloading from the Search &amp; Cache tab</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== DOWNLOADS TAB ===== -->
+      <div id="tab-downloads" class="tab-content hidden fade-in">
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <i data-lucide="download" class="w-5 h-5 text-accent"></i>
+            Active Downloads
+          </h2>
+          <span id="downloads-count-badge" class="text-xs bg-accent/10 text-accent px-2.5 py-1 rounded-full font-medium">0 active</span>
+        </div>
+
+        <div id="downloads-list" class="space-y-3">
+          <!-- Download items injected by JS -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="downloads-empty-state" class="text-center py-16 px-4">
+          <i data-lucide="check-circle" class="w-12 h-12 text-status-ready/50 mx-auto mb-3"></i>
+          <p class="text-text-secondary font-medium">No active downloads</p>
+          <p class="text-text-muted text-sm mt-1">Downloads will appear here in real-time when active</p>
+        </div>
+      </div>
+
+      <!-- ===== SEARCH & CACHE TAB ===== -->
+      <div id="tab-search" class="tab-content hidden fade-in">
+        <!-- Search Bar -->
+        <div class="flex gap-3 mb-6">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"></i>
+            <input
+              type="text"
+              id="search-input"
+              placeholder="Search for movies..."
+              class="w-full bg-bg border border-border-subtle rounded-lg pl-10 pr-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+          </div>
+          <button id="search-btn" class="bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg px-6 py-2.5 text-sm transition-colors flex items-center gap-2">
+            <i data-lucide="search" class="w-4 h-4"></i>
+            Search
+          </button>
+        </div>
+
+        <!-- Bulk Download -->
+        <div id="search-bulk-bar" class="hidden flex items-center justify-between bg-card rounded-xl border border-border-subtle px-5 py-3 mb-4">
+          <p class="text-sm text-text-secondary"><span id="search-results-count">0</span> results found</p>
+          <button id="download-top5-btn" class="bg-accent hover:bg-accent-hover text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors flex items-center gap-1.5">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            Download Top 5
+          </button>
+        </div>
+
+        <!-- Search Results Table -->
+        <div id="search-results-container" class="bg-card rounded-xl border border-border-subtle overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
+                  <th class="text-left px-4 py-3 font-medium">Title</th>
+                  <th class="text-left px-4 py-3 font-medium">Seeders</th>
+                  <th class="text-left px-4 py-3 font-medium">Size</th>
+                  <th class="text-left px-4 py-3 font-medium">Source</th>
+                  <th class="text-left px-4 py-3 font-medium">Quality</th>
+                  <th class="text-right px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="search-results-body">
+                <!-- Rows injected by JS -->
+              </tbody>
+            </table>
+          </div>
+          <!-- Empty State -->
+          <div id="search-empty-state" class="text-center py-16 px-4">
+            <i data-lucide="search" class="w-12 h-12 text-text-muted mx-auto mb-3"></i>
+            <p class="text-text-secondary font-medium">Search for movies</p>
+            <p class="text-text-muted text-sm mt-1">Enter a query above to find torrents to download</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== DISK MANAGEMENT TAB ===== -->
+      <div id="tab-disk" class="tab-content hidden fade-in">
+        <!-- Overall Disk Usage -->
+        <div class="bg-card rounded-xl border border-border-subtle p-6 mb-6">
+          <h3 class="text-base font-semibold mb-4 flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-5 h-5 text-accent"></i>
+            Disk Usage Overview
+          </h3>
+          <div class="mb-2">
+            <div class="flex justify-between text-sm mb-1.5">
+              <span class="text-text-secondary">Used: <span id="disk-used" class="text-text-primary font-medium">0 GB</span></span>
+              <span class="text-text-secondary">Free: <span id="disk-free" class="text-status-ready font-medium">0 GB</span></span>
+            </div>
+            <div class="w-full h-5 bg-bg rounded-full overflow-hidden border border-border-subtle">
+              <div id="disk-usage-bar" class="disk-bar-fill h-full bg-accent rounded-full" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between text-xs text-text-muted mt-1">
+              <span id="disk-used-pct">0% used</span>
+              <span id="disk-free-pct">100% free</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-Movie Disk Usage -->
+        <div class="bg-card rounded-xl border border-border-subtle p-6 mb-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-semibold flex items-center gap-2">
+              <i data-lucide="pie-chart" class="w-5 h-5 text-accent"></i>
+              Per-Movie Disk Usage
+            </h3>
+            <select id="disk-sort" class="bg-bg border border-border-subtle rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-accent appearance-none cursor-pointer">
+              <option value="size-desc">Largest First</option>
+              <option value="size-asc">Smallest First</option>
+              <option value="name-asc">Name A–Z</option>
+              <option value="name-desc">Name Z–A</option>
+            </select>
+          </div>
+          <div id="disk-movie-list" class="space-y-3">
+            <!-- Movie disk bars injected by JS -->
+          </div>
+          <div id="disk-movie-empty" class="hidden text-center py-10">
+            <p class="text-text-muted text-sm">No movies on disk</p>
+          </div>
+        </div>
+
+        <!-- Disk Actions -->
+        <div class="flex flex-wrap gap-3">
+          <button id="cleanup-errors-btn" class="flex items-center gap-1.5 bg-status-error/10 hover:bg-status-error/20 text-status-error border border-status-error/30 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            Cleanup Errors
+          </button>
+          <button id="clear-all-cache-btn" class="flex items-center gap-1.5 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Clear All Cache
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========== CONFIRMATION MODAL ========== -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <!-- Overlay -->
+    <div id="confirm-modal-overlay" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <!-- Modal Card -->
+    <div class="relative bg-card rounded-xl border border-border-subtle shadow-2xl w-full max-w-md p-6 fade-in">
+      <div class="flex items-start gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-status-error/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <i data-lucide="alert-triangle" class="w-5 h-5 text-status-error"></i>
+        </div>
+        <div>
+          <h3 id="confirm-modal-title" class="text-lg font-semibold">Confirm Action</h3>
+          <p id="confirm-modal-message" class="text-sm text-text-secondary mt-1">This action cannot be undone.</p>
+        </div>
+      </div>
+
+      <div class="mb-5">
+        <label for="confirm-modal-input" class="block text-sm text-text-secondary mb-1.5">
+          Type <span id="confirm-modal-code" class="font-mono font-semibold text-accent">DELETE_ALL</span> to confirm
+        </label>
+        <input
+          type="text"
+          id="confirm-modal-input"
+          autocomplete="off"
+          class="w-full bg-bg border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors font-mono"
+          placeholder=""
+        />
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <button id="confirm-modal-cancel" class="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary bg-bg hover:bg-card-hover rounded-lg border border-border-subtle transition-colors">
+          Cancel
+        </button>
+        <button id="confirm-modal-confirm" class="px-4 py-2 text-sm font-semibold text-white bg-status-error hover:bg-red-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin JS -->
+  <script src="/admin.js"></script>
+</body>
+</html>

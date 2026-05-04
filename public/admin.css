@@ -1,0 +1,522 @@
+/* ============================================================
+   TorrentStream Admin Dashboard — Custom Styles
+   ============================================================ */
+
+/* Global */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #0a0a0a;
+  color: #e5e5e5;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #e50914;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff1a25;
+}
+
+/* Selection */
+::selection {
+  background: rgba(229, 9, 20, 0.3);
+  color: #fff;
+}
+
+/* Login Card */
+.login-card {
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.login-card input {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  color: #e5e5e5;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem 0.75rem 2.75rem;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.login-card input:focus {
+  outline: none;
+  border-color: #e50914;
+  box-shadow: 0 0 0 1px rgba(229, 9, 20, 0.3);
+}
+
+.login-card .input-icon {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #666;
+  pointer-events: none;
+}
+
+/* Top Bar */
+.top-bar {
+  background: rgba(24, 24, 24, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #2a2a2a;
+}
+
+/* Stat Cards */
+.stat-card {
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.stat-card:hover {
+  border-color: #e50914;
+  transform: translateY(-2px);
+}
+
+.stat-card .stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.stat-card .stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+/* Tabs */
+.tab-btn {
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  color: #888;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: #e5e5e5;
+  background: #222;
+}
+
+.tab-btn.active {
+  color: #fff;
+  background: #e50914;
+}
+
+/* Tables */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table thead th {
+  background: #1a1a1a;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  border-bottom: 1px solid #2a2a2a;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.data-table tbody tr {
+  border-bottom: 1px solid #1a1a1a;
+  transition: background 0.15s;
+}
+
+.data-table tbody tr:hover {
+  background: #1a1a1a;
+}
+
+.data-table td {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  vertical-align: middle;
+}
+
+/* Status Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.badge-ready {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.badge-downloading,
+.badge-converting {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Quality Badges */
+.badge-4k {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.badge-1080p {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.badge-720p {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+}
+
+.badge-cam {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.badge-unknown {
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748b;
+}
+
+/* Action Buttons */
+.btn-action {
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.btn-play {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.btn-play:hover {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+.btn-reconvert {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+.btn-reconvert:hover {
+  background: rgba(234, 179, 8, 0.25);
+}
+
+.btn-delete {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.btn-download {
+  background: rgba(229, 9, 20, 0.15);
+  color: #e50914;
+  border-color: rgba(229, 9, 20, 0.3);
+}
+
+.btn-download:hover {
+  background: rgba(229, 9, 20, 0.25);
+}
+
+/* Progress Bars */
+.progress-bar-container {
+  background: #2a2a2a;
+  border-radius: 9999px;
+  height: 0.5rem;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar-fill.green { background: #22c55e; }
+.progress-bar-fill.yellow { background: #eab308; }
+.progress-bar-fill.red { background: #ef4444; }
+.progress-bar-fill.accent { background: #e50914; }
+
+/* Disk Usage Bar */
+.disk-bar {
+  background: #2a2a2a;
+  border-radius: 0.5rem;
+  height: 2rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.disk-bar-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.disk-bar-fill.used {
+  background: linear-gradient(90deg, #e50914, #ff4d57);
+}
+
+.disk-bar-fill.cache {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+/* Per-movie disk bars */
+.movie-disk-bar {
+  background: #2a2a2a;
+  border-radius: 0.25rem;
+  height: 1rem;
+  overflow: hidden;
+}
+
+.movie-disk-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e50914, #ff4d57);
+  border-radius: 0.25rem;
+  transition: width 0.5s ease;
+}
+
+/* Confirmation Modal */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  max-width: 28rem;
+  width: 90%;
+}
+
+.modal-card input {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  color: #e5e5e5;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.modal-card input:focus {
+  outline: none;
+  border-color: #e50914;
+}
+
+/* Toast Notification */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid #e50914;
+  color: #e5e5e5;
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  animation: slideInRight 0.3s ease;
+  max-width: 24rem;
+}
+
+.toast.toast-success {
+  border-left-color: #22c55e;
+}
+
+.toast.toast-error {
+  border-left-color: #ef4444;
+}
+
+/* Download Card */
+.download-card {
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: border-color 0.2s;
+}
+
+.download-card:hover {
+  border-color: #333;
+}
+
+/* Search Results */
+.search-result-row {
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  transition: border-color 0.2s;
+}
+
+.search-result-row:hover {
+  border-color: #333;
+}
+
+/* Primary Button */
+.btn-primary {
+  background: #e50914;
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: #ff1a25;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background: #2a2a2a;
+  color: #e5e5e5;
+  border: 1px solid #333;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #333;
+  border-color: #444;
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Poster Thumbnail */
+.poster-thumb {
+  width: 2.5rem;
+  height: 3.5rem;
+  object-fit: cover;
+  border-radius: 0.25rem;
+  background: #2a2a2a;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #666;
+}
+
+.empty-state i {
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1rem;
+  color: #444;
+}
+
+/* Select / Input styling */
+select, input[type="text"], input[type="search"] {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #e5e5e5;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+select:focus, input[type="text"]:focus, input[type="search"]:focus {
+  outline: none;
+  border-color: #e50914;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stat-card .stat-value {
+    font-size: 1.25rem;
+  }
+
+  .data-table {
+    font-size: 0.8rem;
+  }
+
+  .data-table td, .data-table th {
+    padding: 0.5rem;
+  }
+}
