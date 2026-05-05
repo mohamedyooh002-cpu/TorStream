@@ -521,100 +521,108 @@ class EZTVProvider implements TorrentSearchProvider {
 }
 
 // ============================================================
-// Provider: Torrentio + Cinemeta (Stremio ecosystem) — works from cloud IPs
-// Search flow: Cinemeta (name → IMDB IDs) → Torrentio (IMDB ID → magnet links)
+// Provider: OMDB + Torrentio — cloud-safe search
+// OMDB (existing API key) resolves title → IMDB IDs
+// Torrentio fetches magnet links for each IMDB ID
 // ============================================================
 
 class TorrentioProvider implements TorrentSearchProvider {
   name = 'Torrentio';
-  private cinemetaBase = 'https://v3-cinemeta.strem.io';
   private torrentioBase = 'https://torrentio.strem.fun';
 
   async search(query: string): Promise<TorrentSearchResult[]> {
-    // Step 1: resolve title → IMDB IDs via Cinemeta
-    const metas = await this.searchCinemeta(query);
+    // Step 1: resolve title → IMDB IDs via OMDB (always accessible from cloud)
+    const metas = await this.searchOmdb(query);
     if (metas.length === 0) return [];
 
-    // Step 2: fetch streams for the top matches (up to 4)
+    // Step 2: fetch streams from Torrentio for top 4 matches
     const results: TorrentSearchResult[] = [];
     for (const meta of metas.slice(0, 4)) {
       try {
-        const streams = await this.getStreams(meta.id);
+        const streams = await this.getStreams(meta.imdbId, meta.type);
         for (const stream of streams) {
-          const parsed = this.parseStreamTitle(stream.title || stream.name || '');
-          const hash = stream.infoHash.toLowerCase();
+          const parsed = this.parseStreamTitle(stream.title || '');
+          const hash = (stream.infoHash || '').toLowerCase();
           if (!hash || hash.length < 10) continue;
           results.push({
-            title: `${meta.name}${meta.year ? ' (' + meta.year + ')' : ''} ${parsed.quality}`.trim(),
-            magnetUri: this.buildMagnet(hash, meta.name),
+            title: `${meta.title} (${meta.year}) ${parsed.quality}`.trim(),
+            magnetUri: this.buildMagnet(hash, meta.title),
             infoHash: hash,
             seeders: parsed.seeders,
             leechers: 0,
             size: parsed.size,
             sizeBytes: this.parseSizeToBytes(parsed.size),
             source: this.name,
-            category: 'movies'
+            category: meta.type === 'series' ? 'tv' : 'movies'
           });
         }
-      } catch {
-        // skip failed meta
+      } catch (err) {
+        logger.debug(`Torrentio stream fetch failed for ${meta.imdbId}: ${(err as Error).message}`);
       }
     }
     return results;
   }
 
-  private async searchCinemeta(query: string): Promise<Array<{ id: string; name: string; year?: string }>> {
+  private async searchOmdb(query: string): Promise<Array<{ imdbId: string; title: string; year: string; type: string }>> {
+    if (!config.omdbApiKey) return [];
     try {
-      // Try both movie and series catalogs
       const [moviesRes, seriesRes] = await Promise.allSettled([
-        axios.get(`${this.cinemetaBase}/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { timeout: 10000 }),
-        axios.get(`${this.cinemetaBase}/catalog/series/top/search=${encodeURIComponent(query)}.json`, { timeout: 10000 })
+        axios.get('https://www.omdbapi.com/', {
+          params: { s: query, type: 'movie', apikey: config.omdbApiKey },
+          timeout: 8000
+        }),
+        axios.get('https://www.omdbapi.com/', {
+          params: { s: query, type: 'series', apikey: config.omdbApiKey },
+          timeout: 8000
+        })
       ]);
-      const metas: Array<{ id: string; name: string; year?: string }> = [];
-      for (const res of [moviesRes, seriesRes]) {
-        if (res.status === 'fulfilled') {
-          for (const m of (res.value.data?.metas || [])) {
-            metas.push({ id: m.id, name: m.name, year: m.year ? String(m.year) : undefined });
+
+      const metas: Array<{ imdbId: string; title: string; year: string; type: string }> = [];
+      for (const [res, type] of [[moviesRes, 'movie'], [seriesRes, 'series']] as const) {
+        if (res.status === 'fulfilled' && res.value.data?.Response === 'True') {
+          for (const item of (res.value.data.Search || []).slice(0, 3)) {
+            metas.push({ imdbId: item.imdbID, title: item.Title, year: item.Year || '', type });
           }
         }
       }
       return metas.slice(0, 5);
-    } catch {
+    } catch (err) {
+      logger.warn(`OMDB search failed: ${(err as Error).message}`);
       return [];
     }
   }
 
-  private async getStreams(imdbId: string): Promise<Array<{ infoHash: string; title: string; name: string }>> {
-    const type = imdbId.startsWith('tt') ? 'movie' : 'movie';
-    const url = `${this.torrentioBase}/stream/${type}/${imdbId}.json`;
-    const response = await axios.get(url, { timeout: 15000 });
+  private async getStreams(imdbId: string, type: string): Promise<Array<{ infoHash: string; title: string }>> {
+    const stremioType = type === 'series' ? 'series' : 'movie';
+    const url = `${this.torrentioBase}/stream/${stremioType}/${imdbId}.json`;
+    const response = await axios.get(url, { timeout: 12000 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (response.data?.streams || []).filter((s: any) => s.infoHash);
   }
 
   private parseStreamTitle(title: string): { quality: string; seeders: number; size: string } {
-    // Torrentio title format:
-    // Line 1: movie name (sometimes)
-    // Line 2: "Quality | Size" e.g. "4K REMUX | 39.06 GB"
-    // Line 3: "👤 50 🌐 EN" or "👤 50 💾 39 GB"
+    // Torrentio title format (newline-separated):
+    // Line 1: "Movie Name YEAR Quality codec..."
+    // Line 2: "👤 {seeders} 💾 {size} ⚙️ {source}"
+    // Line 3+: language flags (optional)
     const lines = title.split('\n');
     let quality = '';
     let seeders = 0;
     let size = '';
 
+    // Extract quality keywords from line 1
+    const qualityPatterns = ['2160p', '4K', '1080p', '720p', '480p', 'BluRay', 'BDRip', 'WEB-DL', 'WEBRip', 'HDTV', 'CAM', 'REMUX', 'HDR', 'HDR10', 'DV'];
+    const line1 = lines[0] || '';
+    const found = qualityPatterns.filter(p => line1.toUpperCase().includes(p.toUpperCase()));
+    quality = found.slice(0, 2).join(' ');
+
     for (const line of lines) {
-      if (line.includes('|')) {
-        const [q, s] = line.split('|');
-        if (q) quality = q.trim();
-        if (s) size = s.trim();
-      }
       if (line.includes('👤')) {
         const match = line.match(/👤\s*(\d+)/);
         if (match) seeders = parseInt(match[1], 10) || 0;
       }
-      // fallback size from 💾
       if (!size && line.includes('💾')) {
-        const match = line.match(/💾\s*([\d.]+ ?(?:GB|MB|TB|KB))/i);
+        const match = line.match(/💾\s*([\d.]+\s*(?:GB|MB|TB|KB))/i);
         if (match) size = match[1].trim();
       }
     }
@@ -643,8 +651,11 @@ class TorrentioProvider implements TorrentSearchProvider {
 
   async testConnection(): Promise<boolean> {
     try {
-      const res = await axios.get(`${this.cinemetaBase}/catalog/movie/top/search=test.json`, { timeout: 5000 });
-      return Array.isArray(res.data?.metas);
+      const res = await axios.get('https://www.omdbapi.com/', {
+        params: { s: 'test', type: 'movie', apikey: config.omdbApiKey },
+        timeout: 5000
+      });
+      return res.data?.Response === 'True';
     } catch {
       return false;
     }
