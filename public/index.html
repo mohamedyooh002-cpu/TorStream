@@ -356,6 +356,90 @@
     @media (max-width: 600px) {
       #search-results, #library-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
     }
+
+    /* Settings Button */
+    #settings-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--muted);
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    #settings-btn:hover { color: var(--text); border-color: #444; }
+    #settings-btn svg { width: 16px; height: 16px; }
+
+    /* Settings Modal */
+    #settings-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.65);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    #settings-overlay.open { opacity: 1; pointer-events: all; }
+
+    #settings-modal {
+      background: #1a1a1a; border: 1px solid #2a2a2a;
+      border-radius: 14px; padding: 24px;
+      width: 100%; max-width: 400px; margin: 16px;
+      transform: translateY(10px);
+      transition: transform 0.2s;
+    }
+    #settings-overlay.open #settings-modal { transform: translateY(0); }
+
+    .settings-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .settings-title {
+      font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;
+    }
+    .settings-title svg { width: 17px; height: 17px; color: var(--accent); }
+    #settings-close {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; padding: 4px; display: flex; align-items: center;
+      border-radius: 6px; transition: color 0.15s, background 0.15s;
+    }
+    #settings-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+    #settings-close svg { width: 18px; height: 18px; }
+
+    .settings-section { display: flex; flex-direction: column; gap: 6px; }
+    .settings-section-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+    }
+
+    .settings-row {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; padding: 14px; border-radius: 10px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      cursor: pointer; transition: background 0.15s;
+    }
+    .settings-row:hover { background: rgba(255,255,255,0.055); }
+
+    .settings-row-info { flex: 1; }
+    .settings-row-title { font-size: 14px; font-weight: 500; color: var(--text); }
+    .settings-row-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+
+    /* Toggle switch */
+    .toggle-wrap { flex-shrink: 0; margin-top: 2px; }
+    .toggle-input { display: none; }
+    .toggle-track {
+      display: block; width: 38px; height: 22px;
+      background: #333; border-radius: 11px;
+      position: relative; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-input:checked + .toggle-track { background: var(--accent); }
+    .toggle-track::after {
+      content: ''; position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      background: #fff; border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-input:checked + .toggle-track::after { transform: translateX(16px); }
   </style>
 </head>
 <body>
@@ -364,16 +448,48 @@
   <!-- Navbar -->
   <nav>
     <div class="nav-logo">Tor<span>Stream</span></div>
-    <div class="nav-tabs">
-      <button class="nav-tab active" id="nav-search" onclick="switchView('search')">
-        <i data-lucide="search"></i> Search
-      </button>
-      <button class="nav-tab" id="nav-library" onclick="switchView('library')">
-        <i data-lucide="hard-drive"></i> Libraries
-        <span id="library-badge" style="display:none;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:2px;"></span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="nav-tabs">
+        <button class="nav-tab active" id="nav-search" onclick="switchView('search')">
+          <i data-lucide="search"></i> Search
+        </button>
+        <button class="nav-tab" id="nav-library" onclick="switchView('library')">
+          <i data-lucide="hard-drive"></i> Libraries
+          <span id="library-badge" style="display:none;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:2px;"></span>
+        </button>
+      </div>
+      <button id="settings-btn" title="Settings" onclick="openSettingsModal()">
+        <i data-lucide="settings"></i>
       </button>
     </div>
   </nav>
+
+  <!-- Settings Modal -->
+  <div id="settings-overlay" onclick="handleSettingsOverlayClick(event)">
+    <div id="settings-modal">
+      <div class="settings-header">
+        <div class="settings-title">
+          <i data-lucide="settings"></i> Settings
+        </div>
+        <button id="settings-close" onclick="closeSettingsModal()">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">Streaming</div>
+        <label class="settings-row" for="toggle-stream-only">
+          <div class="settings-row-info">
+            <div class="settings-row-title">Stream without saving</div>
+            <div class="settings-row-desc">Files are streamed from the torrent but not kept in your library after you close the player.</div>
+          </div>
+          <div class="toggle-wrap">
+            <input type="checkbox" class="toggle-input" id="toggle-stream-only" onchange="onStreamOnlyToggle(this.checked)" />
+            <span class="toggle-track"></span>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
 
   <!-- Search View -->
   <div class="view active" id="view-search">

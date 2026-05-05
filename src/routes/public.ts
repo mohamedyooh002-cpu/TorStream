@@ -6,7 +6,7 @@ import {
 } from '../services/database.js';
 import { searchTorrents, resolveMagnetUri } from '../services/search.js';
 import { fetchMetadata } from '../services/metadata.js';
-import { queueDownload } from '../services/downloader.js';
+import { queueDownload, cleanupStreamOnlySession } from '../services/downloader.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { validatePagination, validateSort, sanitizeHtml } from '../utils/validators.js';
 import { extractQuality } from '../utils/helpers.js';
@@ -261,7 +261,7 @@ router.get('/search', rateLimit(config.searchRateLimitPerMin, 60000), async (req
 // ============================================================
 router.post('/request-download', rateLimit(config.downloadRequestRateLimitPerHour, 3600000), async (req: Request, res: Response) => {
   try {
-    const { magnetUri, infoHash, title, source } = req.body;
+    const { magnetUri, infoHash, title, source, streamOnly } = req.body;
 
     if (!magnetUri || !infoHash) {
       res.status(400).json({ error: 'magnetUri and infoHash are required' });
@@ -283,17 +283,42 @@ router.post('/request-download', rateLimit(config.downloadRequestRateLimitPerHou
       magnetUri,
       infoHash: hash,
       title: title || 'Unknown',
-      source: source || 'public-request'
+      source: source || 'public-request',
+      streamOnly: streamOnly === true
     });
 
     res.json({
       message: 'Download queued',
       movieId: result.movieId,
-      status: result.status
+      status: result.status,
+      streamOnly: result.streamOnly ?? false
     });
   } catch (err) {
     logger.error(`Download request error: ${(err as Error).message}`);
     res.status(500).json({ error: 'Failed to queue download' });
+  }
+});
+
+// ============================================================
+// DELETE /api/movies/:id/stream-cleanup — Clean up a stream-only session
+// ============================================================
+router.delete('/movies/:id/stream-cleanup', async (req: Request, res: Response) => {
+  try {
+    const movie = getMovieById(req.params.id);
+    if (!movie) {
+      res.status(404).json({ error: 'Movie not found' });
+      return;
+    }
+    // Only allow cleanup of stream-only sessions
+    if (movie.torrent_source !== 'stream-only') {
+      res.status(400).json({ error: 'Not a stream-only session' });
+      return;
+    }
+    cleanupStreamOnlySession(movie.id, movie.info_hash);
+    res.json({ message: 'Stream-only session cleaned up' });
+  } catch (err) {
+    logger.error(`Stream cleanup error: ${(err as Error).message}`);
+    res.status(500).json({ error: 'Cleanup failed' });
   }
 });
 

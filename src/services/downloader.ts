@@ -2,8 +2,9 @@ import WebTorrent from 'webtorrent';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { DownloadJob } from '../types/index.js';
-import { insertMovie, updateMovie, getMovieByInfoHash, insertDownloadLog, updateDownloadLog } from './database.js';
+import { insertMovie, updateMovie, getMovieByInfoHash, insertDownloadLog, updateDownloadLog, deleteMovie } from './database.js';
 import { convertToHls } from './hls-converter.js';
 import { getHashDir, getHlsDir } from '../utils/helpers.js';
 import logger from '../utils/logger.js';
@@ -62,8 +63,9 @@ export async function queueDownload(options: {
   sizeBytes?: number;
   seeders?: number;
   leechers?: number;
-}): Promise<{ jobId: string; movieId: string; status: string }> {
-  const { magnetUri, infoHash, title, source, sizeBytes, seeders, leechers } = options;
+  streamOnly?: boolean;
+}): Promise<{ jobId: string; movieId: string; status: string; streamOnly?: boolean }> {
+  const { magnetUri, infoHash, title, source, sizeBytes, seeders, leechers, streamOnly } = options;
   const hash = infoHash.toLowerCase();
 
   // Check if already cached on disk
@@ -73,14 +75,15 @@ export async function queueDownload(options: {
   // Check if already in the database
   const existingMovie = getMovieByInfoHash(hash);
   if (existingMovie && existingMovie.status === 'ready') {
-    return { jobId: '', movieId: existingMovie.id, status: 'already_cached' };
+    // Already on disk — stream from cache (no cleanup needed regardless of streamOnly flag)
+    return { jobId: '', movieId: existingMovie.id, status: 'already_cached', streamOnly: false };
   }
 
   // If this exact torrent is already active, treat repeated clicks as idempotent.
   const existingActiveJob = Array.from(activeJobs.values())
     .find(j => j.infoHash === hash && (j.status === 'downloading' || j.status === 'converting'));
   if (existingActiveJob && existingMovie) {
-    return { jobId: existingActiveJob.id, movieId: existingMovie.id, status: 'downloading' };
+    return { jobId: existingActiveJob.id, movieId: existingMovie.id, status: 'downloading', streamOnly: false };
   }
 
   // Check if video file already exists on disk
@@ -112,7 +115,7 @@ export async function queueDownload(options: {
           });
         }
 
-        return { jobId: '', movieId, status: 'cached_from_disk' };
+        return { jobId: '', movieId, status: 'cached_from_disk', streamOnly: false };
       } else {
         // Movie exists in DB but maybe needs HLS — mark ready regardless so direct streaming works
         if (!existingMovie.hls_path || !fs.existsSync(existingMovie.hls_path)) {
@@ -122,7 +125,7 @@ export async function queueDownload(options: {
             logger.warn(`HLS conversion skipped (no ffmpeg): ${(err as Error).message}`);
           });
         }
-        return { jobId: '', movieId: existingMovie.id, status: 'cached_from_disk' };
+        return { jobId: '', movieId: existingMovie.id, status: 'cached_from_disk', streamOnly: false };
       }
     }
   }
@@ -159,11 +162,11 @@ export async function queueDownload(options: {
       updateMovie(movieId, { status: 'downloading' } as any);
     }
 
-    return { jobId: 'queued', movieId, status: 'queued' };
+    return { jobId: 'queued', movieId, status: 'queued', streamOnly: streamOnly ?? false };
   }
 
   // Start download immediately
-  return startDownload(magnetUri, hash, title, source, sizeBytes, seeders, leechers);
+  return startDownload(magnetUri, hash, title, source, sizeBytes, seeders, leechers, streamOnly);
 }
 
 function cancelAllPreviousDownloads(): void {
@@ -214,14 +217,18 @@ async function startDownload(
   source: string,
   sizeBytes?: number,
   seeders?: number,
-  leechers?: number
-): Promise<{ jobId: string; movieId: string; status: string }> {
+  leechers?: number,
+  streamOnly?: boolean
+): Promise<{ jobId: string; movieId: string; status: string; streamOnly?: boolean }> {
   const hash = infoHash.toLowerCase();
-  const hashDir = getHashDir(hash);
+  // stream-only sessions use a temp directory so files are not kept permanently
+  const savePath = streamOnly
+    ? path.join(os.tmpdir(), 'torstream-temp', hash)
+    : getHashDir(hash);
 
   // Create directory
-  if (!fs.existsSync(hashDir)) {
-    fs.mkdirSync(hashDir, { recursive: true });
+  if (!fs.existsSync(savePath)) {
+    fs.mkdirSync(savePath, { recursive: true });
   }
 
   // Create or get movie entry
@@ -237,7 +244,7 @@ async function startDownload(
       leechers: leechers ?? undefined,
       size_bytes: sizeBytes ?? undefined,
       status: 'downloading',
-      torrent_source: source
+      torrent_source: streamOnly ? 'stream-only' : source
     });
   } else {
     movieId = existingMovie.id;
@@ -265,7 +272,7 @@ async function startDownload(
     downloadSpeed: 0,
     numPeers: 0,
     files: [],
-    savePath: hashDir,
+    savePath: savePath,
     hlsPath: null,
     error: null,
     startedAt: new Date(),
@@ -277,7 +284,7 @@ async function startDownload(
 
   try {
     const torrent = client.add(magnetUri, {
-      path: hashDir,
+      path: savePath,
       announce: [
         'udp://tracker.opentrackr.org:1337/announce',
         'udp://tracker.openbittorrent.com:6969/announce',
@@ -390,7 +397,7 @@ async function startDownload(
       updateDownloadLog(logId, 'converting');
 
       // Find the downloaded video file
-      const videoPath = findVideoFile(hashDir);
+      const videoPath = findVideoFile(savePath);
       if (!videoPath) {
         job.status = 'error';
         job.error = 'Downloaded file not found on disk';
@@ -406,19 +413,27 @@ async function startDownload(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       updateMovie(movieId, { video_path: videoPath } as any);
 
-      // Start HLS conversion
-      try {
-        await convertToHls(movieId, hash, videoPath);
-        job.status = 'ready';
-        job.hlsPath = getHlsDir(hash);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updateMovie(movieId, { status: 'ready', hls_path: path.join(getHlsDir(hash), 'master.m3u8') } as any);
-        updateDownloadLog(logId, 'ready', undefined, new Date().toISOString());
-        emitProgress(job);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        logger.warn(`HLS conversion failed (${errMsg}), falling back to direct streaming`);
-        // ffmpeg not available — mark ready for direct streaming anyway
+      // Start HLS conversion (skip for stream-only sessions)
+      if (!streamOnly) {
+        try {
+          await convertToHls(movieId, hash, videoPath);
+          job.status = 'ready';
+          job.hlsPath = getHlsDir(hash);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          updateMovie(movieId, { status: 'ready', hls_path: path.join(getHlsDir(hash), 'master.m3u8') } as any);
+          updateDownloadLog(logId, 'ready', undefined, new Date().toISOString());
+          emitProgress(job);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.warn(`HLS conversion failed (${errMsg}), falling back to direct streaming`);
+          job.status = 'ready';
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          updateMovie(movieId, { status: 'ready', video_path: videoPath } as any);
+          updateDownloadLog(logId, 'ready', undefined, new Date().toISOString());
+          emitProgress(job);
+        }
+      } else {
+        // stream-only: mark ready for direct streaming, no HLS
         job.status = 'ready';
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         updateMovie(movieId, { status: 'ready', video_path: videoPath } as any);
@@ -456,7 +471,40 @@ async function startDownload(
     emitProgress(job);
   }
 
-  return { jobId, movieId, status: 'downloading' };
+  return { jobId, movieId, status: 'downloading', streamOnly: streamOnly ?? false };
+}
+
+/**
+ * Clean up a stream-only session: remove the torrent, delete temp files, and purge the DB entry.
+ */
+export function cleanupStreamOnlySession(movieId: string, infoHash: string): void {
+  const hash = infoHash.toLowerCase();
+
+  // Remove the active WebTorrent torrent
+  for (const [jobId, job] of activeJobs.entries()) {
+    if (job.infoHash === hash) {
+      try {
+        if (job.torrent) client.remove(job.torrent);
+      } catch { /* ignore */ }
+      activeJobs.delete(jobId);
+      break;
+    }
+  }
+
+  // Delete temp directory
+  const tempDir = path.join(os.tmpdir(), 'torstream-temp', hash);
+  if (fs.existsSync(tempDir)) {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (err) {
+      logger.warn(`Could not delete stream-only temp dir: ${(err as Error).message}`);
+    }
+  }
+
+  // Remove from database
+  try { deleteMovie(movieId); } catch (err) {
+    logger.warn(`Could not delete stream-only movie from DB: ${(err as Error).message}`);
+  }
+
+  logger.info(`Stream-only session cleaned up: ${hash}`);
 }
 
 /**
@@ -622,7 +670,8 @@ export function getActiveTorrentFile(infoHash: string): TorrentFile | null {
   for (const job of activeJobs.values()) {
     if (job.infoHash !== hash) continue;
     if (!job.torrent) continue;
-    const files: TorrentFile[] = job.torrent.files;
+    const t = job.torrent as { files: TorrentFile[] };
+    const files: TorrentFile[] = t.files;
     if (!files || files.length === 0) return null;
     return pickVideoFile(files);
   }
@@ -645,7 +694,7 @@ export function waitForTorrentFile(infoHash: string, timeoutMs = 45000): Promise
   let torrent: { files: TorrentFile[]; on: (event: string, cb: () => void) => void } | null = null;
   for (const job of activeJobs.values()) {
     if (job.infoHash === hash && job.torrent) {
-      torrent = job.torrent;
+      torrent = job.torrent as { files: TorrentFile[]; on: (event: string, cb: () => void) => void };
       break;
     }
   }

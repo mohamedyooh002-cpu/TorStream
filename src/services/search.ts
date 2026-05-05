@@ -315,7 +315,7 @@ class PirateBayProvider implements TorrentSearchProvider {
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await axios.get(`${this.apiUrl}/q.php`, {
+      const response = await axios.get(`${this.mirrors[0]}/q.php`, {
         params: { q: 'test', cat: 0 },
         timeout: 5000
       });

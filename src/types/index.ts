@@ -217,6 +217,7 @@ export interface EnrichedSearchResult extends TorrentSearchResult {
   metadata: MovieMetadata | null;
   cached: boolean;
   movieId: string | null;
+  status: string | null;
   quality: string;
 }
 

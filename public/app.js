@@ -10,11 +10,38 @@
   let currentView = 'search';
   let currentMovieId = null;
   let currentMovieTitle = '';
+  let currentStreamOnly = false;   // true when current player session is stream-only
   let hlsInstance = null;
   let controlsTimeout = null;
   let trackedPlays = new Set();
   let latestSearchResults = [];
   let progressByInfoHash = {};
+
+  // ── Settings ─────────────────────────────────────────────────────────────────
+  let streamOnlyMode = localStorage.getItem('torstream-stream-only') === 'true';
+
+  function openSettingsModal() {
+    var overlay = document.getElementById('settings-overlay');
+    var toggle = document.getElementById('toggle-stream-only');
+    if (toggle) toggle.checked = streamOnlyMode;
+    if (overlay) overlay.classList.add('open');
+  }
+  window.openSettingsModal = openSettingsModal;
+
+  function closeSettingsModal() {
+    var overlay = document.getElementById('settings-overlay');
+    if (overlay) overlay.classList.remove('open');
+  }
+  window.closeSettingsModal = closeSettingsModal;
+
+  window.handleSettingsOverlayClick = function (e) {
+    if (e.target === document.getElementById('settings-overlay')) closeSettingsModal();
+  };
+
+  window.onStreamOnlyToggle = function (checked) {
+    streamOnlyMode = checked;
+    localStorage.setItem('torstream-stream-only', checked ? 'true' : 'false');
+  };
 
   function normalizeProgress(rawProgress) {
     var n = Number(rawProgress);
@@ -98,7 +125,7 @@
     const res = await fetch(API_BASE + '/api/request-download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ magnetUri, infoHash, title, source }),
+      body: JSON.stringify({ magnetUri, infoHash, title, source, streamOnly: streamOnlyMode }),
     });
     var body = null;
     try { body = await res.json(); } catch (_) {}
@@ -332,14 +359,14 @@
       btn.innerHTML = '<i data-lucide="check"></i> Opening…';
       lucide.createIcons();
       setTimeout(function () {
-        openPlayer(resp.movieId, title);
+        openPlayer(resp.movieId, title, resp.streamOnly === true);
 
         // Keep the button usable after returning from player instead of leaving it on "Opening…"
         btn.disabled = false;
         btn.dataset.movieId = resp.movieId;
         btn.className = 'btn-stream stream';
         btn.innerHTML = '<i data-lucide="radio"></i> Watch Live';
-        btn.onclick = function () { openPlayer(resp.movieId, title); };
+        btn.onclick = function () { openPlayer(resp.movieId, title, false); };
         lucide.createIcons();
       }, 400);
       return;
@@ -509,9 +536,10 @@
   }
 
   // ── Player ───────────────────────────────────────────────────────────────────
-  function openPlayer(movieId, title) {
+  function openPlayer(movieId, title, isStreamOnly) {
     currentMovieId = movieId;
     currentMovieTitle = title || '';
+    currentStreamOnly = isStreamOnly === true;
     switchView('player');
     initPlayer(movieId, title);
   }
@@ -646,6 +674,15 @@
     if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
     destroyHls();
     clearTimeout(controlsTimeout);
+
+    // Clean up stream-only session (fire-and-forget)
+    if (currentStreamOnly && currentMovieId) {
+      var cleanupId = currentMovieId;
+      fetch(API_BASE + '/api/movies/' + encodeURIComponent(cleanupId) + '/stream-cleanup', { method: 'DELETE' })
+        .catch(function () { /* best-effort */ });
+      currentStreamOnly = false;
+    }
+
     switchView('search');
   };
 
