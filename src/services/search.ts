@@ -521,10 +521,142 @@ class EZTVProvider implements TorrentSearchProvider {
 }
 
 // ============================================================
+// Provider: Torrentio + Cinemeta (Stremio ecosystem) — works from cloud IPs
+// Search flow: Cinemeta (name → IMDB IDs) → Torrentio (IMDB ID → magnet links)
+// ============================================================
+
+class TorrentioProvider implements TorrentSearchProvider {
+  name = 'Torrentio';
+  private cinemetaBase = 'https://v3-cinemeta.strem.io';
+  private torrentioBase = 'https://torrentio.strem.fun';
+
+  async search(query: string): Promise<TorrentSearchResult[]> {
+    // Step 1: resolve title → IMDB IDs via Cinemeta
+    const metas = await this.searchCinemeta(query);
+    if (metas.length === 0) return [];
+
+    // Step 2: fetch streams for the top matches (up to 4)
+    const results: TorrentSearchResult[] = [];
+    for (const meta of metas.slice(0, 4)) {
+      try {
+        const streams = await this.getStreams(meta.id);
+        for (const stream of streams) {
+          const parsed = this.parseStreamTitle(stream.title || stream.name || '');
+          const hash = stream.infoHash.toLowerCase();
+          if (!hash || hash.length < 10) continue;
+          results.push({
+            title: `${meta.name}${meta.year ? ' (' + meta.year + ')' : ''} ${parsed.quality}`.trim(),
+            magnetUri: this.buildMagnet(hash, meta.name),
+            infoHash: hash,
+            seeders: parsed.seeders,
+            leechers: 0,
+            size: parsed.size,
+            sizeBytes: this.parseSizeToBytes(parsed.size),
+            source: this.name,
+            category: 'movies'
+          });
+        }
+      } catch {
+        // skip failed meta
+      }
+    }
+    return results;
+  }
+
+  private async searchCinemeta(query: string): Promise<Array<{ id: string; name: string; year?: string }>> {
+    try {
+      // Try both movie and series catalogs
+      const [moviesRes, seriesRes] = await Promise.allSettled([
+        axios.get(`${this.cinemetaBase}/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { timeout: 10000 }),
+        axios.get(`${this.cinemetaBase}/catalog/series/top/search=${encodeURIComponent(query)}.json`, { timeout: 10000 })
+      ]);
+      const metas: Array<{ id: string; name: string; year?: string }> = [];
+      for (const res of [moviesRes, seriesRes]) {
+        if (res.status === 'fulfilled') {
+          for (const m of (res.value.data?.metas || [])) {
+            metas.push({ id: m.id, name: m.name, year: m.year ? String(m.year) : undefined });
+          }
+        }
+      }
+      return metas.slice(0, 5);
+    } catch {
+      return [];
+    }
+  }
+
+  private async getStreams(imdbId: string): Promise<Array<{ infoHash: string; title: string; name: string }>> {
+    const type = imdbId.startsWith('tt') ? 'movie' : 'movie';
+    const url = `${this.torrentioBase}/stream/${type}/${imdbId}.json`;
+    const response = await axios.get(url, { timeout: 15000 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (response.data?.streams || []).filter((s: any) => s.infoHash);
+  }
+
+  private parseStreamTitle(title: string): { quality: string; seeders: number; size: string } {
+    // Torrentio title format:
+    // Line 1: movie name (sometimes)
+    // Line 2: "Quality | Size" e.g. "4K REMUX | 39.06 GB"
+    // Line 3: "👤 50 🌐 EN" or "👤 50 💾 39 GB"
+    const lines = title.split('\n');
+    let quality = '';
+    let seeders = 0;
+    let size = '';
+
+    for (const line of lines) {
+      if (line.includes('|')) {
+        const [q, s] = line.split('|');
+        if (q) quality = q.trim();
+        if (s) size = s.trim();
+      }
+      if (line.includes('👤')) {
+        const match = line.match(/👤\s*(\d+)/);
+        if (match) seeders = parseInt(match[1], 10) || 0;
+      }
+      // fallback size from 💾
+      if (!size && line.includes('💾')) {
+        const match = line.match(/💾\s*([\d.]+ ?(?:GB|MB|TB|KB))/i);
+        if (match) size = match[1].trim();
+      }
+    }
+    return { quality, seeders, size };
+  }
+
+  private buildMagnet(infoHash: string, name: string): string {
+    const trackers = [
+      'udp://tracker.opentrackr.org:1337/announce',
+      'udp://open.stealth.si:80/announce',
+      'udp://tracker.openbittorrent.com:6969/announce',
+      'udp://exodus.desync.com:6969/announce'
+    ];
+    const trackersParam = trackers.map(t => `&tr=${encodeURIComponent(t)}`).join('');
+    return `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}${trackersParam}`;
+  }
+
+  private parseSizeToBytes(size: string): number {
+    if (!size) return 0;
+    const match = size.match(/([\d.]+)\s*(GB|MB|TB|KB)/i);
+    if (!match) return 0;
+    const num = parseFloat(match[1]);
+    const units: Record<string, number> = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+    return Math.round(num * (units[match[2].toUpperCase()] || 0));
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const res = await axios.get(`${this.cinemetaBase}/catalog/movie/top/search=test.json`, { timeout: 5000 });
+      return Array.isArray(res.data?.metas);
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================================
 // Search Manager — coordinates providers with failover
 // ============================================================
 
 const providers: TorrentSearchProvider[] = [
+  new TorrentioProvider(),   // first — works from cloud/Render
   new YTSProvider(),
   new PirateBayProvider(),
   new SolidTorrentsProvider(),
